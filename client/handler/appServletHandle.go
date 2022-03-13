@@ -2,9 +2,12 @@ package handler
 
 import (
 	"fmt"
+	"github.com/golang-jwt/jwt/v4"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
+	"strings"
 )
 
 const OauthURl = "http://localhost:8081/OauthServlet"
@@ -92,4 +95,73 @@ func AppServletTokenHandle(writer http.ResponseWriter, request *http.Request) {
 	accessToken := query.Get("access_token")
 
 	fmt.Println("accessToken:" + string(accessToken))
+}
+
+func AppServletOIDCHandle(writer http.ResponseWriter, request *http.Request) {
+	query := request.URL.Query()
+	fmt.Println(query)
+	code := query.Get("code")
+
+	params := url.Values{}
+	params.Add("code", code)
+	params.Add("grant_type", "authorization_code_2") // 应该为 authorization_code，为了与授权区分
+	params.Add("app_id", "APPID_RABBIT")
+	params.Add("app_secret", "APPSECRET_RABBIT")
+
+	fmt.Println("start post code for token ...")
+	response, err := http.PostForm(OauthURl, params)
+	if err != nil {
+		return
+	}
+	defer response.Body.Close()
+	result, _ := io.ReadAll(response.Body)
+
+	arry := strings.Split(string(result), "&")
+
+	accessToken := arry[0]
+	idToken := arry[1]
+
+	fmt.Println("accessToken:" + accessToken)
+	fmt.Println("id_token:" + idToken)
+
+	// 获取用户登录标识
+	m := parseJwt(idToken)
+
+	fmt.Println(m["sub"])
+
+	fmt.Println(fmt.Sprintf("%v", m["sub"]))
+
+	request.Header.Set("sub", fmt.Sprintf("%v", m["sub"]))
+
+	// 跳转到授权页面
+	u, _ := url.Parse("http://localhost:8080/oidc.html")
+	proxy := httputil.ReverseProxy{
+		Director: func(request *http.Request) {
+			request.URL = u
+		},
+	}
+
+	proxy.ServeHTTP(writer, request)
+}
+
+func parseJwt(jwtString string) map[string]interface{} {
+	sharedTokenSecret := []byte("hellooauthhellooauthhellooauthhellooauth")
+
+	token, _ := jwt.Parse(jwtString, func(token *jwt.Token) (interface{}, error) {
+		return sharedTokenSecret, nil
+	})
+
+	m := make(map[string]interface{})
+
+	if jwt.SigningMethodHS256.Alg() != token.Header["alg"] {
+		fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		return m
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		fmt.Println("jwt body:", claims)
+		return claims
+	}
+
+	return m
 }

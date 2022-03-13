@@ -1,7 +1,8 @@
-package handle
+package handler
 
 import (
 	"fmt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"io"
 	"math/rand"
@@ -137,6 +138,7 @@ func doPost(writer http.ResponseWriter, request *http.Request) {
 
 			codeScopeMap[code] = rscope //授权范围与授权码做绑定
 
+			redirectUri = "http://localhost:8080/AppOIDCServlet" // OIDC
 			oauthUrl, _ := url.Parse(redirectUri)
 			params := oauthUrl.Query()
 			params.Add("code", code)
@@ -237,6 +239,32 @@ func doPost(writer http.ResponseWriter, request *http.Request) {
 		accessToken := generateAccessToken(appId, "USERTEST") //生成访问令牌access_token的值
 
 		io.WriteString(writer, accessToken)
+	} else if grantType == "authorization_code_2" {
+		if appId != appMap["app_id"] {
+			io.WriteString(writer, "app_id is not available")
+			return
+		}
+
+		if appSecret != appMap["app_secret"] {
+			io.WriteString(writer, "app_secret is not available")
+			return
+		}
+
+		code := request.PostFormValue("code")
+
+		fmt.Println("code", code)
+		if !isExistCode(code) { //验证code值
+			return
+		}
+		delete(codeMap, code) //授权码一旦被使用，须要立即作废
+
+		fmt.Println("start generate access_toen")
+		accessToken := generateAccessToken(appId, "USERTEST") //生成访问令牌access_token的值
+		TokenScopeMap[accessToken] = codeScopeMap[code]       //授权范围与访问令牌绑定
+
+		idToken := generateIdToken(appId, "XIAOMINGTEST") //模拟用户小明登录
+
+		io.WriteString(writer, accessToken+"&"+idToken)
 	}
 }
 
@@ -296,4 +324,23 @@ func generateCode(appId string, user string) string {
 	codeMap[code] = appId + "|" + user + "|" + strconv.FormatInt(time.Now().UnixMilli(), 10)
 
 	return code
+}
+
+func generateIdToken(appId string, user string) string {
+	sharedTokenSecret := []byte("hellooauthhellooauthhellooauthhellooauth")
+
+	iat := time.Now().Unix()
+	token := jwt.New(jwt.SigningMethodHS256)
+	claims := make(jwt.MapClaims)
+	claims["iss"] = "http://localhost:8081/"
+	claims["sub"] = user
+	claims["aud"] = appId
+	claims["iat"] = iat
+	claims["exp"] = iat + 60*60
+
+	token.Claims = claims
+
+	tokenString, _ := token.SignedString(sharedTokenSecret)
+
+	return tokenString
 }
