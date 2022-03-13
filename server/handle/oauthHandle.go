@@ -50,40 +50,59 @@ func doGet(writer http.ResponseWriter, request *http.Request) {
 
 	fmt.Println("8081 GET responseType: " + responseType)
 
-	if appMap["app_id"] != appId {
-		return
+	if responseType == "code" {
+		if appMap["app_id"] != appId {
+			return
+		}
+
+		if appMap["redirect_uri"] != redirectUri {
+			return
+		}
+
+		// 验证第三方软件请求的权限范围是否与当时注册的权限范围一致
+		if !checkScope(scope) {
+			//超出注册的权限范围
+			return
+		}
+
+		//生成页面reqid
+		reqid := strconv.FormatInt(time.Now().UnixMilli(), 10)
+		reqidMap[reqid] = reqid //保存该reqid值
+
+		request.Header.Set("reqid", reqid)
+		request.Header.Set("response_type", responseType)
+		request.Header.Set("redirect_uri", redirectUri)
+		request.Header.Set("app_id", appId)
+
+		// 跳转到授权页面
+		u, _ := url.Parse("http://localhost:8081/approve.html")
+		proxy := httputil.ReverseProxy{
+			Director: func(request *http.Request) {
+				request.URL = u
+			},
+		}
+
+		proxy.ServeHTTP(writer, request) // 授权码流程的【第一次】重定向
+
+		//至此颁发授权码code的准备工作完毕
+	} else if responseType == "token" {
+		//隐式许可流程（模拟），DEMO CODE，注意 该流程全是在前端通信中完成的
+		if appId != "APPIDTEST" {
+			return
+		}
+
+		accessToken := generateAccessToken(appId, "USERTEST") // 生成访问令牌access_token的值
+
+		oauthUrl, _ := url.Parse(redirectUri)
+		params := oauthUrl.Query()
+		params.Add("redirect_uri", redirectUri)
+		params.Add("access_token", accessToken)
+
+		oauthUrl.RawQuery = params.Encode() // 构造第三方软件的回调地址，并重定向到该地址
+		writer.Header().Set("Location", oauthUrl.String())
+		writer.WriteHeader(302)
+
 	}
-
-	if appMap["redirect_uri"] != redirectUri {
-		return
-	}
-
-	// 验证第三方软件请求的权限范围是否与当时注册的权限范围一致
-	if !checkScope(scope) {
-		//超出注册的权限范围
-		return
-	}
-
-	//生成页面reqid
-	reqid := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	reqidMap[reqid] = reqid //保存该reqid值
-
-	request.Header.Set("reqid", reqid)
-	request.Header.Set("response_type", responseType)
-	request.Header.Set("redirect_uri", redirectUri)
-	request.Header.Set("app_id", appId)
-
-	// 跳转到授权页面
-	u, _ := url.Parse("http://localhost:8081/approve.html")
-	proxy := httputil.ReverseProxy{
-		Director: func(request *http.Request) {
-			request.URL = u
-		},
-	}
-
-	proxy.ServeHTTP(writer, request) // 授权码流程的【第一次】重定向
-
-	//至此颁发授权码code的准备工作完毕
 }
 
 func doPost(writer http.ResponseWriter, request *http.Request) {
@@ -180,6 +199,42 @@ func doPost(writer http.ResponseWriter, request *http.Request) {
 		accessToken := generateAccessToken(appId, "USERTEST") //生成访问令牌access_token的值
 
 		// TODO: 2020/2/28 删除旧的access_token 、删除旧的refresh_token、生成新的refresh_token
+
+		io.WriteString(writer, accessToken)
+	} else if grantType == "password" {
+		username := request.PostFormValue("username")
+		password := request.PostFormValue("password")
+
+		if appSecret != "APPSECRETTEST" {
+			io.WriteString(writer, "app_secret is not available")
+			return
+		}
+
+		if username != "USERNAMETEST" {
+			io.WriteString(writer, "username is not available")
+			return
+		}
+
+		if password != "PASSWORDTEST" {
+			io.WriteString(writer, "password is not available")
+			return
+		}
+
+		accessToken := generateAccessToken(appId, "USERTEST") //生成访问令牌access_token的值
+
+		io.WriteString(writer, accessToken)
+	} else if grantType == "client_credentials" {
+		if appId != "APPIDTEST" {
+			io.WriteString(writer, "app_id is not available")
+			return
+		}
+
+		if appSecret != "APPSECRETTEST" {
+			io.WriteString(writer, "app_secret is not available")
+			return
+		}
+
+		accessToken := generateAccessToken(appId, "USERTEST") //生成访问令牌access_token的值
 
 		io.WriteString(writer, accessToken)
 	}

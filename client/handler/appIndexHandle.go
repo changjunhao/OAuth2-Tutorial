@@ -30,3 +30,16 @@ func AppIndexHandle(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Location", oauthUrl.String()) // 授权码流程的【第一次】重定向
 	writer.WriteHeader(302)
 }
+
+func AppIndexTokenHandle(writer http.ResponseWriter, request *http.Request) {
+	//隐式许可流程（模拟），DEMO CODE
+	oauthUrl, _ := url.Parse(OauthUrl)
+	params := oauthUrl.Query()
+	params.Add("response_type", "token") //告诉授权服务直接返回access_token
+	params.Add("redirect_uri", "http://localhost:8080/AppTokenServlet")
+	params.Add("app_id", "APPIDTEST")
+
+	oauthUrl.RawQuery = params.Encode() // 构造请求授权的URl
+	writer.Header().Set("Location", oauthUrl.String())
+	writer.WriteHeader(302)
+}
